@@ -1,3 +1,4 @@
+#include <errno.h>
 #include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -6,14 +7,23 @@
 
 struct termios original_termios;
 
+void die(const char *e)
+{
+    perror(e);
+    exit(1);
+}
+
 void cleanUp(void)
 {
-    tcsetattr(STDIN_FILENO, TCSAFLUSH, &original_termios);
+    if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &original_termios) == -1)
+        die("tcsetattr");
 }
 
 void enableRawMode(void)
 {
-    tcgetattr(STDIN_FILENO, &original_termios);
+    if (tcgetattr(STDIN_FILENO, &original_termios) == -1)
+        die("tcgetattr");
+
     atexit(cleanUp);
     struct termios raw = original_termios;
 
@@ -25,7 +35,8 @@ void enableRawMode(void)
     raw.c_cc[VMIN] = 0; // bytes before read can return
     raw.c_cc[VTIME] = 1; // time to wait for read
 
-    tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw);
+    if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw) == -1)
+        die("tcsetattr");
 
 }
 
@@ -37,7 +48,9 @@ int main(void)
     while(1)
     {
         char c = '\0';
-        read(STDIN_FILENO, &c, 1);
+        // cygwin sometimes raise eagain when read fails
+        if (read(STDIN_FILENO, &c, 1) == -1 && errno != EAGAIN)
+            die("read");
         // is control character (non-printable)
         if(iscntrl(c))
         {
