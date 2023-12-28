@@ -33,8 +33,11 @@ enum editorKey {
     ARROW_DOWN,
     ARROW_RIGHT,
     ARROW_LEFT,
+    DELETE_KEY,
+    HOME_KEY,
+    END_KEY,
     PAGE_UP,
-    PAGE_DOWN
+    PAGE_DOWN,
 };
 
 void abAppend(struct abuf *ab, char *s, int len)
@@ -172,10 +175,20 @@ int editorReadKey()
                 {
                     switch(seq[1])
                     {
+                        case '1':
+                            return HOME_KEY;
+                        case '3':
+                            return DELETE_KEY;
+                        case '4':
+                            return END_KEY;
                         case '5':
                             return PAGE_UP;
                         case '6':
                             return PAGE_DOWN;
+                        case '7':
+                            return HOME_KEY;
+                        case '8':
+                            return END_KEY;
                     }
                 }
 
@@ -192,7 +205,22 @@ int editorReadKey()
                         return ARROW_RIGHT;
                     case 'D':
                         return ARROW_LEFT;
+                    case 'H':
+                        return HOME_KEY;
+                    case 'F':
+                        return END_KEY;
                 }
+            }
+
+        }
+        else if (seq[0] == '0')
+        {
+            switch(seq[1])
+            {
+                case 'H':
+                    return HOME_KEY;
+                case 'F':
+                    return END_KEY;
             }
 
         }
@@ -226,6 +254,7 @@ void editorMoveCursor(int c)
             if (E.cx < E.screencols - 1)
                 E.cx++;
             break;
+
     }
 }
 void editorProcessKeypress()
@@ -239,15 +268,23 @@ void editorProcessKeypress()
             write(STDOUT_FILENO, "\x1b[1;1H", 6);
             exit(0);
             break;
+
         case PAGE_UP:
         case PAGE_DOWN:
         {
+            // need braces to declare the integer
             int times = E.screenrows;
             while (times--)
                 editorMoveCursor(c == PAGE_UP ? ARROW_UP : ARROW_DOWN);
             break;
         }
 
+        case HOME_KEY:
+            E.cx = 0;
+            break;
+        case END_KEY:
+            E.cx = E.screencols - 1;
+            break;
 
         case ARROW_UP:
         case ARROW_LEFT:
