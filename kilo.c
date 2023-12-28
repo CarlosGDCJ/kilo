@@ -12,13 +12,14 @@
 #define CTRL_KEY(a) ((a) & 0x1f)
 
 /** Data **/
-struct config {
+struct editorConfig {
     struct termios original_termios;
     int screenrows;
     int screencols;
+    int cx, cy;
 };
 
-struct config E;
+struct editorConfig E;
 
 struct abuf {
     char *b;
@@ -142,6 +143,25 @@ char waitKeypress()
 }
 
 /** Input **/
+void editorMoveCursor(char c)
+{
+    switch (c)
+    {
+        case 'w':
+            E.cy--;
+            break;
+        case 'a':
+            E.cx--;
+            break;
+        case 's':
+            E.cy++;
+            break;
+        case 'd':
+            E.cx++;
+            break;
+
+    }
+}
 void editorReadKey()
 {
     char c = waitKeypress();
@@ -152,6 +172,12 @@ void editorReadKey()
             write(STDOUT_FILENO, "\x1b[2J", 4);
             write(STDOUT_FILENO, "\x1b[1;1H", 6);
             exit(0);
+            break;
+        case 'w':
+        case 'a':
+        case 's':
+        case 'd':
+            editorMoveCursor(c);
             break;
     }
 }
@@ -199,7 +225,11 @@ void editorRefreshScreen()
     abAppend(&ab, "\x1b[H", 3); // go to start
 
     editorDrawRows(&ab);
-    abAppend(&ab, "\x1b[H", 3); // go to start
+
+    char buf[32];
+    snprintf(buf, sizeof(buf), "\x1b[%d;%dH", E.cy + 1, E.cx + 1);
+    abAppend(&ab, buf, strlen(buf));
+
     abAppend(&ab, "\x1b[?25h", 6); // show cursor
     write(STDOUT_FILENO, ab.b, ab.len);
     abFree(&ab);
@@ -208,6 +238,8 @@ void editorRefreshScreen()
 /** Init **/
 void initEditor()
 {
+    E.cx = 0;
+    E.cy = 0;
     if (getWindowSize(&E.screenrows, &E.screencols) == -1)
         die("getWindowSize");
 
