@@ -128,7 +128,7 @@ int getWindowSize(int *rows, int *cols)
 }
 
 // wait for a keypress and return it
-char waitKeypress()
+char editorReadKey()
 {
     int nread;
     char c;
@@ -139,7 +139,35 @@ char waitKeypress()
             die("read");
     }
 
-    return c;
+    if (c == '\x1b')
+    {
+        char seq[3];
+        if (read(STDIN_FILENO, &seq[0], 1) != 1)
+            return '\x1b';
+        if (read(STDIN_FILENO, &seq[1], 1) != 1)
+            return '\x1b';
+        if (seq[0] == '[')
+        {
+            switch(seq[1])
+            {
+                case 'A':
+                    return 'w';
+                case 'B':
+                    return 's';
+                case 'C':
+                    return 'd';
+                case 'D':
+                    return 'a';
+            }
+
+        }
+        return '\x1b';
+    }
+    else
+    {
+        return c;
+    }
+
 }
 
 /** Input **/
@@ -162,9 +190,9 @@ void editorMoveCursor(char c)
 
     }
 }
-void editorReadKey()
+void editorProcessKeypress()
 {
-    char c = waitKeypress();
+    char c = editorReadKey();
 
     switch (c)
     {
@@ -252,7 +280,7 @@ int main(void)
     while(1)
     {
         editorRefreshScreen();
-        editorReadKey();
+        editorProcessKeypress();
     }
     return 0;
 }
