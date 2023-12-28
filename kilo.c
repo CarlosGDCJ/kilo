@@ -8,6 +8,7 @@
 #include <unistd.h>
 #include <string.h>
 
+#define KILO_VERSION "0.0.1"
 #define CTRL_KEY(a) ((a) & 0x1f)
 
 /** Data **/
@@ -161,7 +162,31 @@ void editorDrawRows(struct abuf *ab)
     int y;
     for (y = 0; y < E.screenrows; y++)
     {
-        abAppend(ab, "~", 1);
+        if (y == E.screenrows / 3)
+        {
+            char welcome[80];
+            int welcomelen = snprintf(welcome, sizeof(welcome), "Kilo editor -- version %s", KILO_VERSION);
+
+            if (welcomelen > E.screencols)
+                welcomelen = E.screencols;
+
+            int padding = (E.screencols - welcomelen) / 2;
+            if (padding)
+            {
+                abAppend(ab, "~", 1);
+                padding--;
+            }
+            while (padding--)
+                abAppend(ab, " ", 1);
+            abAppend(ab, welcome, welcomelen);
+
+        }
+        else
+        {
+            abAppend(ab, "~", 1);
+        }
+
+        abAppend(ab, "\x1b[K", 3); // clear rest of line
 
         if (y < E.screenrows - 1)
             abAppend(ab, "\r\n", 2);
@@ -170,11 +195,12 @@ void editorDrawRows(struct abuf *ab)
 void editorRefreshScreen()
 {
     struct abuf ab = ABUF_INIT;
-    abAppend(&ab, "\x1b[2J", 4);
-    abAppend(&ab, "\x1b[H", 3);
+    abAppend(&ab, "\x1b[?25l", 6); // hide cursor
+    abAppend(&ab, "\x1b[H", 3); // go to start
 
     editorDrawRows(&ab);
-    abAppend(&ab, "\x1b[H", 3);
+    abAppend(&ab, "\x1b[H", 3); // go to start
+    abAppend(&ab, "\x1b[?25h", 6); // show cursor
     write(STDOUT_FILENO, ab.b, ab.len);
     abFree(&ab);
 }
