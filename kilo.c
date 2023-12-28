@@ -28,6 +28,15 @@ struct abuf {
 
 #define ABUF_INIT {NULL, 0};
 
+enum editorKey {
+    ARROW_UP = 1000,
+    ARROW_DOWN,
+    ARROW_RIGHT,
+    ARROW_LEFT,
+    PAGE_UP,
+    PAGE_DOWN
+};
+
 void abAppend(struct abuf *ab, char *s, int len)
 {
     char *new = realloc(ab->b, ab->len + len);
@@ -128,11 +137,17 @@ int getWindowSize(int *rows, int *cols)
 }
 
 // wait for a keypress and return it
-char editorReadKey()
+int editorReadKey()
 {
     int nread;
     char c;
 
+    // althogh we return an int, we use a char to read
+    // because read sets only 1 byte (8 bits), so our int would have
+    // leftover garbage at the end and that would mess up the equality
+    // checks. One alternative would be to use a int initialized to zero
+    // but we opted to use a char and it gets extended with zeros
+    // when it is returned
     while ((nread = read(STDIN_FILENO, &c, 1)) != 1)
     {
         if(nread == -1 && errno != EAGAIN)
@@ -148,16 +163,36 @@ char editorReadKey()
             return '\x1b';
         if (seq[0] == '[')
         {
-            switch(seq[1])
+            if (seq[1] > '0' && seq[1] <= '9')
             {
-                case 'A':
-                    return 'w';
-                case 'B':
-                    return 's';
-                case 'C':
-                    return 'd';
-                case 'D':
-                    return 'a';
+                if (read(STDIN_FILENO, &seq[2], 1) != 1)
+                    return '\x1b';
+                
+                if (seq[2] == '~')
+                {
+                    switch(seq[1])
+                    {
+                        case '5':
+                            return PAGE_UP;
+                        case '6':
+                            return PAGE_DOWN;
+                    }
+                }
+
+            }
+            else
+            {
+                switch(seq[1])
+                {
+                    case 'A':
+                        return ARROW_UP;
+                    case 'B':
+                        return ARROW_DOWN;
+                    case 'C':
+                        return ARROW_RIGHT;
+                    case 'D':
+                        return ARROW_LEFT;
+                }
             }
 
         }
@@ -171,28 +206,31 @@ char editorReadKey()
 }
 
 /** Input **/
-void editorMoveCursor(char c)
+void editorMoveCursor(int c)
 {
     switch (c)
     {
-        case 'w':
-            E.cy--;
+        case ARROW_UP:
+            if (E.cy > 0)
+                E.cy--;
             break;
-        case 'a':
-            E.cx--;
+        case ARROW_LEFT:
+            if (E.cx > 0)
+                E.cx--;
             break;
-        case 's':
-            E.cy++;
+        case ARROW_DOWN:
+            if (E.cy < E.screenrows - 1)
+                E.cy++;
             break;
-        case 'd':
-            E.cx++;
+        case ARROW_RIGHT:
+            if (E.cx < E.screencols - 1)
+                E.cx++;
             break;
-
     }
 }
 void editorProcessKeypress()
 {
-    char c = editorReadKey();
+    int c = editorReadKey();
 
     switch (c)
     {
@@ -201,10 +239,20 @@ void editorProcessKeypress()
             write(STDOUT_FILENO, "\x1b[1;1H", 6);
             exit(0);
             break;
-        case 'w':
-        case 'a':
-        case 's':
-        case 'd':
+        case PAGE_UP:
+        case PAGE_DOWN:
+        {
+            int times = E.screenrows;
+            while (times--)
+                editorMoveCursor(c == PAGE_UP ? ARROW_UP : ARROW_DOWN);
+            break;
+        }
+
+
+        case ARROW_UP:
+        case ARROW_LEFT:
+        case ARROW_DOWN:
+        case ARROW_RIGHT:
             editorMoveCursor(c);
             break;
     }
