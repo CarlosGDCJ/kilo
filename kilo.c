@@ -32,6 +32,7 @@ struct editorConfig {
     int screencols;
     int cx, cy;
     int numrows;
+    int rowoff;
     erow *row;
 };
 
@@ -295,18 +296,27 @@ void abFree(struct abuf *ab)
 }
 
 /** Output **/
+void editorScroll()
+{
+    if (E.cy < E.rowoff)
+        E.rowoff = E.cy;
+    else if (E.cy >= E.rowoff + E.screenrows)
+        E.rowoff = E.cy - E.screenrows + 1; // go back 1 screen from E.cy, so that it is now in the middle
+
+}
 
 void editorDrawRows(struct abuf *ab)
 {
     int y;
     for (y = 0; y < E.screenrows; y++)
     {
+        int filerow = E.rowoff + y;
         // E.numrows = rows in current file
         // so we only print the default stuff (~)
         // after we printed the whole file
-        if (y >= E.numrows)
+        if (filerow >= E.numrows)
         {
-            if (E.numrows == 0 && y == E.screenrows / 3)
+            if (E.numrows == 0 && filerow == E.screenrows / 3)
             {
                 char welcome[80];
                 int welcomelen = snprintf(welcome, sizeof(welcome), "Kilo editor -- version %s", KILO_VERSION);
@@ -335,10 +345,10 @@ void editorDrawRows(struct abuf *ab)
             // we use this variable (instead of changing
             // E.row.size directly) to not lose the original
             // value of E.row.size
-            int len = E.row[y].size;
+            int len = E.row[filerow].size;
             if (len > E.screencols)
                 len = E.screencols;
-            abAppend(ab, E.row[y].chars, len);
+            abAppend(ab, E.row[filerow].chars, len);
         }
 
 
@@ -351,6 +361,7 @@ void editorDrawRows(struct abuf *ab)
 
 void editorRefreshScreen()
 {
+    editorScroll();
     struct abuf ab = ABUF_INIT;
     abAppend(&ab, "\x1b[?25l", 6); // hide cursor
     abAppend(&ab, "\x1b[H", 3); // go to start
@@ -358,7 +369,7 @@ void editorRefreshScreen()
     editorDrawRows(&ab);
 
     char buf[32];
-    snprintf(buf, sizeof(buf), "\x1b[%d;%dH", E.cy + 1, E.cx + 1);
+    snprintf(buf, sizeof(buf), "\x1b[%d;%dH", E.cy - E.rowoff + 1, E.cx + 1); // position cursor
     abAppend(&ab, buf, strlen(buf));
 
     abAppend(&ab, "\x1b[?25h", 6); // show cursor
@@ -380,7 +391,7 @@ void editorMoveCursor(int c)
                 E.cx--;
             break;
         case ARROW_DOWN:
-            if (E.cy < E.screenrows - 1)
+            if (E.cy < E.numrows - 1)
                 E.cy++;
             break;
         case ARROW_RIGHT:
@@ -436,6 +447,7 @@ void initEditor()
     E.cy = 0;
     E.numrows = 0;
     E.row = NULL;
+    E.rowoff = 0;
     if (getWindowSize(&E.screenrows, &E.screencols) == -1)
         die("getWindowSize");
 
