@@ -33,6 +33,7 @@ struct editorConfig {
     int cx, cy;
     int numrows;
     int rowoff;
+    int coloff;
     erow *row;
 };
 
@@ -302,6 +303,11 @@ void editorScroll()
         E.rowoff = E.cy;
     else if (E.cy >= E.rowoff + E.screenrows)
         E.rowoff = E.cy - E.screenrows + 1; // go back 1 screen from E.cy, so that it is now in the middle
+    
+    if (E.cx < E.coloff)
+        E.coloff = E.cx;
+    else if (E.cx >= E.coloff + E.screencols)
+        E.coloff = E.cx - E.screencols + 1;
 
 }
 
@@ -345,10 +351,12 @@ void editorDrawRows(struct abuf *ab)
             // we use this variable (instead of changing
             // E.row.size directly) to not lose the original
             // value of E.row.size
-            int len = E.row[filerow].size;
+            int len = E.row[filerow].size - E.coloff;
+            if (len < 0)
+                len = 0;
             if (len > E.screencols)
                 len = E.screencols;
-            abAppend(ab, E.row[filerow].chars, len);
+            abAppend(ab, &E.row[filerow].chars[E.coloff], len);
         }
 
 
@@ -369,7 +377,7 @@ void editorRefreshScreen()
     editorDrawRows(&ab);
 
     char buf[32];
-    snprintf(buf, sizeof(buf), "\x1b[%d;%dH", E.cy - E.rowoff + 1, E.cx + 1); // position cursor
+    snprintf(buf, sizeof(buf), "\x1b[%d;%dH", E.cy - E.rowoff + 1, E.cx - E.coloff + 1); // position cursor
     abAppend(&ab, buf, strlen(buf));
 
     abAppend(&ab, "\x1b[?25h", 6); // show cursor
@@ -380,6 +388,7 @@ void editorRefreshScreen()
 /** Input **/
 void editorMoveCursor(int c)
 {
+    erow *row = (E.cy > E.numrows) ? NULL : &E.row[E.cy];
     switch (c)
     {
         case ARROW_UP:
@@ -389,17 +398,27 @@ void editorMoveCursor(int c)
         case ARROW_LEFT:
             if (E.cx > 0)
                 E.cx--;
+            else if (E.cy > 0){
+                E.cy--;
+                E.cx = E.row[E.cy].size;
+            }
             break;
         case ARROW_DOWN:
             if (E.cy < E.numrows - 1)
                 E.cy++;
             break;
         case ARROW_RIGHT:
-            if (E.cx < E.screencols - 1)
+            if (row && E.cx < row->size)
                 E.cx++;
             break;
-
     }
+
+    // we have to theck for the row again after we increase/decreased x/y
+    row = (E.cy > E.numrows) ? NULL : &E.row[E.cy];
+    int rowlen = row ? row->size : 0;
+
+    if (E.cx > rowlen)
+        E.cx = rowlen;
 }
 void editorProcessKeypress()
 {
