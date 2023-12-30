@@ -297,10 +297,14 @@ void editorUpdateRow(erow *row)
 
 }
 
-void editorAppendRow(char *s, ssize_t len)
+void editorInsertRow(int at, char *s, ssize_t len)
 {
+    if (at < 0 || at > E.numrows)
+        return;
+
     E.row = realloc(E.row, sizeof(erow) * (E.numrows + 1));
-    int at = E.numrows;
+    memmove (&E.row[at + 1], &E.row[at], sizeof(erow) * (E.numrows - at));
+
     E.row[at].size = len;
     E.row[at].chars = malloc(len + 1);
 
@@ -318,30 +322,122 @@ void editorAppendRow(char *s, ssize_t len)
 
 }
 
+void editorFreeFow(erow *row)
+{
+    free(row->render);
+    free(row->chars);
+}
+
+void editorDelRow(int at)
+{
+    if (at < 0 || at >= E.numrows)
+        return;
+    
+    editorFreeFow(&E.row[at]);
+    memmove(&E.row[at], &E.row[at + 1], sizeof(erow) * (E.numrows - at - 1));
+
+    E.numrows--;
+    E.dirty++;
+}
+
 void editorRowInsertChar(erow *row, int at, int c)
 {
     // our char is an int (?)
     if (at < 0 || at > row->size)
         at = row->size;
-    row->chars = realloc(row->chars, row->size + 2); // 1 for the new char, 1 for '\0' (row->size doesn't count '\0')
+    // to allocate space for n chars we request n + 1
+    // because of the null byte ('\0')
+    // so to allocate space for n + 1, we request n + 2
+    row->chars = realloc(row->chars, row->size + 2);
     memmove(&row->chars[at + 1], &row->chars[at], row->size - at + 1);
     row->chars[at] = c;
     row->size++;
-    editorUpdateRow(row);
+    editorUpdateRow(row); // recalculate the rendered stuff
 
     E.dirty++;
 
+}
+
+void editorRowAppendString(erow *row, char *s, size_t len)
+{
+    row->chars = realloc(row->chars, row->size + len + 1);
+    memcpy(&row->chars[row->size], s, len);
+
+    row->size += len;
+    row->chars[row->size] = '\0';
+    editorUpdateRow(row);
+
+    E.dirty++;
+}
+
+void editorRowDelChar(erow *row, int at) {
+  if (at < 0 || at >= row->size)
+    return;
+  // the null byte ('\0') gets copied here
+  memmove(&row->chars[at], &row->chars[at + 1], row->size - at);
+  row->size--;
+  editorUpdateRow(row);
+
+  E.dirty++;
 }
 
 /** Editor operations */
 void editorInsertChar(int c)
 {
     if (E.cy == E.numrows)
-        editorAppendRow("", 0);
+        editorInsertRow(E.numrows, "", 0);
     
     editorRowInsertChar(&E.row[E.cy], E.cx, c);
     E.cx++;
 
+}
+
+void editorInsertNewLine()
+{
+    if (E.cx == 0)
+        editorInsertRow(E.cy, "", 0); // current line becomes blank
+    else
+    {
+        erow *row = &E.row[E.cy];
+        editorInsertRow(E.cy + 1, &row->chars[E.cx], row->size - E.cx);
+
+        // This reassignment is needed because editorInsertRow calls realloc
+        // on E.row, and that might move things, invalidating the previous address
+        // try removing this line and pressing enter on a really long line
+        row = &E.row[E.cy];
+
+        row->size = E.cx;
+        row->chars[E.cx] = '\0';
+        // don't need to call this for the new row (E.cy + 1)
+        // because editorInsertRow already calls it
+        editorUpdateRow(row);
+    }
+    E.cx = 0;
+    E.cy++;
+}
+
+void editorDelChar()
+{
+    if (E.cy == E.numrows)
+        return;
+    else if (E.cy == 0 && E.cx == 0)
+        return;
+    
+
+    
+    erow *row = &E.row[E.cy];
+    if (E.cx > 0) // if there's a character at the left of the cursor (cursor not at 0)
+    {
+        editorRowDelChar(row, E.cx - 1);
+        E.cx--;
+    }
+    else
+    {
+        E.cx = E.row[E.cy - 1].size;
+        editorRowAppendString(&E.row[E.cy - 1], row->chars, row->size);
+        editorDelRow(E.cy);
+        E.cy--;
+    }
 }
 /** File i/o **/
 char *editorRowsToString(int *buflen)
@@ -392,7 +488,7 @@ void editorOpen(char *filename)
             linelen--;
         }
 
-        editorAppendRow(line, linelen);
+        editorInsertRow(E.numrows, line, linelen);
 
     }
 
@@ -649,7 +745,7 @@ void editorProcessKeypress()
     switch (key)
     {
         case '\r':
-            // TODO
+            editorInsertNewLine();
             break;
 
         case CTRL_KEY('q'):
@@ -675,7 +771,10 @@ void editorProcessKeypress()
         case BACKSPACE:
         case CTRL_KEY('h'):
         case DELETE_KEY:
-            // TODO
+            if (key == DELETE_KEY)
+                editorMoveCursor(ARROW_RIGHT); // clever
+            
+            editorDelChar();
             break;
         
         case CTRL_KEY('l'):
