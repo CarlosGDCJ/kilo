@@ -23,6 +23,7 @@
 #define CTRL_KEY(a) ((a) & 0x1f)
 #define ABUF_INIT {NULL, 0}
 #define KILO_TABSTOP 8
+#define KILO_QUIT_TIMES 3
 
 /** Data **/
 typedef struct erow {
@@ -41,6 +42,7 @@ struct editorConfig {
     int numrows;
     int rowoff;
     int coloff;
+    int dirty;
     erow *row;
     char *filename;
     char statusmsg[80];
@@ -312,6 +314,7 @@ void editorAppendRow(char *s, ssize_t len)
 
     // only increase after everything is done (?)
     E.numrows++;
+    E.dirty++;
 
 }
 
@@ -325,6 +328,8 @@ void editorRowInsertChar(erow *row, int at, int c)
     row->chars[at] = c;
     row->size++;
     editorUpdateRow(row);
+
+    E.dirty++;
 
 }
 
@@ -391,6 +396,7 @@ void editorOpen(char *filename)
 
     }
 
+    E.dirty = 0;
     free(line);
     fclose(fp);
 
@@ -414,6 +420,7 @@ void editorSave()
                 close(fd);
                 free(buf);
                 editorSetStatusMessage("%d bytes written to disk", len);
+                E.dirty = 0;
                 return;
             }
 
@@ -479,7 +486,7 @@ void editorDrawStatusBar(struct abuf *ab)
     abAppend(ab, "\x1b[7m", 4);
 
     char status[80], rstatus[80];
-    int len = snprintf(status, sizeof(status), "%.20s - %d lines", E.filename ? E.filename : "[No name]", E.numrows);
+    int len = snprintf(status, sizeof(status), "%.20s - %d lines %s", E.filename ? E.filename : "[No name]", E.numrows, (E.dirty > 0) ? "(modified)" : "");
     int rlen = snprintf(rstatus, sizeof(rstatus), "%d/%d", E.cy + 1, E.numrows);
 
     if (len > E.screencols)
@@ -636,6 +643,7 @@ void editorMoveCursor(int c)
 }
 void editorProcessKeypress()
 {
+    static int quit_times = KILO_QUIT_TIMES; // static files get initialized only once
     int key = editorReadKey();
 
     switch (key)
@@ -645,6 +653,16 @@ void editorProcessKeypress()
             break;
 
         case CTRL_KEY('q'):
+            if (E.dirty && quit_times > 0)
+            {
+                editorSetStatusMessage("WARNING!!! File has unsaved changes. "
+                    "Press Ctrl-Q %d more times to quit.", quit_times);
+                quit_times--;
+                return;
+                // this return makes so it doesn't read the line further below
+                // that increases assigns quit_times to KILO_QUIT_TIMES
+
+            }
             write(STDOUT_FILENO, "\x1b[2J", 4);
             write(STDOUT_FILENO, "\x1b[1;1H", 6);
             exit(0);
@@ -702,6 +720,8 @@ void editorProcessKeypress()
             editorInsertChar(key);
             break;
     }
+
+    quit_times = KILO_QUIT_TIMES;
 }
 
 
@@ -717,6 +737,7 @@ void initEditor()
     E.filename = NULL;
     E.statusmsg[0] = '\0';
     E.statusmsg_time = 0;
+    E.dirty = 0;
     if (getWindowSize(&E.screenrows, &E.screencols) == -1)
         die("getWindowSize");
     
