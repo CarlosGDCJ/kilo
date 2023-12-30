@@ -5,6 +5,8 @@
 #define _BSD_SOURCE
 #define _GNU_SOURCE
 
+#include <stdarg.h>
+#include <time.h>
 #include <sys/types.h>
 #include <errno.h>
 #include <ctype.h>
@@ -39,6 +41,9 @@ struct editorConfig {
     int rowoff;
     int coloff;
     erow *row;
+    char *filename;
+    char statusmsg[80];
+    time_t statusmsg_time;
 };
 
 struct editorConfig E;
@@ -307,6 +312,9 @@ void appendRow(char *s, ssize_t len)
 /** File i/o **/
 void editorOpen(char *filename)
 {
+    free(E.filename);
+    E.filename = strdup(filename);
+
     FILE *fp = fopen(filename, "r");
 
     if (!fp)
@@ -315,6 +323,7 @@ void editorOpen(char *filename)
     char *line = NULL;
     size_t linecap = 0;
     ssize_t linelen;
+    E.filename = filename;
 
     while((linelen = getline(&line, &linecap, fp)) != -1)
     {
@@ -351,6 +360,18 @@ void abFree(struct abuf *ab)
 }
 
 /** Output **/
+void editorSetStatusMessage(const char *fmt, ...)
+{
+    // the va functions come from stdarg and are used to
+    // handle variadic functions
+    va_list ap;
+    va_start(ap, fmt); // we pass the argument before the ... as a point of reference
+    vsnprintf(E.statusmsg, sizeof(E.statusmsg), fmt, ap);
+    va_end(ap);
+    E.statusmsg_time = time(NULL); // passing NULL gives current time
+
+}
+
 void editorScroll()
 {
     E.rx = 0;
@@ -365,6 +386,52 @@ void editorScroll()
         E.coloff = E.rx;
     else if (E.rx >= E.coloff + E.screencols)
         E.coloff = E.rx - E.screencols + 1;
+
+}
+
+
+void editorDrawStatusBar(struct abuf *ab)
+{
+    abAppend(ab, "\x1b[7m", 4);
+
+    char status[80], rstatus[80];
+    int len = snprintf(status, sizeof(status), "%.20s - %d lines", E.filename ? E.filename : "[No name]", E.numrows);
+    int rlen = snprintf(rstatus, sizeof(rstatus), "%d/%d", E.cy + 1, E.numrows);
+
+    if (len > E.screencols)
+        len = E.screencols;
+
+    abAppend(ab, status, len);
+
+    while(len < E.screencols)
+    {
+        if (E.screencols - len == rlen)
+        {
+            abAppend(ab, rstatus, rlen);
+            break;
+        }
+        else
+        {
+            abAppend(ab, " ", 1);
+            len++;
+        }
+    }
+
+    // abAppend(ab, E.filename)
+
+    abAppend(ab, "\x1b[m", 3);
+    abAppend(ab, "\r\n", 2);
+
+}
+
+void editorDrawMessageBar(struct abuf *ab)
+{
+    abAppend(ab, "\x1b[K", 3);
+    int msglen = strlen(E.statusmsg);
+    if (msglen > E.screencols)
+        msglen = E.screencols;
+    if (msglen && time(NULL) - E.statusmsg_time < 5)
+        abAppend(ab, E.statusmsg, msglen);
 
 }
 
@@ -418,10 +485,9 @@ void editorDrawRows(struct abuf *ab)
 
 
         abAppend(ab, "\x1b[K", 3); // clear rest of line
-
-        if (y < E.screenrows - 1)
-            abAppend(ab, "\r\n", 2);
+        abAppend(ab, "\r\n", 2);
     }
+
 }
 
 void editorRefreshScreen()
@@ -432,6 +498,8 @@ void editorRefreshScreen()
     abAppend(&ab, "\x1b[H", 3); // go to start
 
     editorDrawRows(&ab);
+    editorDrawStatusBar(&ab);
+    editorDrawMessageBar(&ab);
 
     char buf[32];
     snprintf(buf, sizeof(buf), "\x1b[%d;%dH", E.cy - E.rowoff + 1, E.rx - E.coloff + 1); // position cursor
@@ -538,10 +606,15 @@ void initEditor()
     E.cy = 0;
     E.rx = 0;
     E.numrows = 0;
-    E.row = NULL;
     E.rowoff = 0;
+    E.row = NULL;
+    E.filename = NULL;
+    E.statusmsg[0] = '\0';
+    E.statusmsg_time = 0;
     if (getWindowSize(&E.screenrows, &E.screencols) == -1)
         die("getWindowSize");
+    
+    E.screenrows -= 2; // One of the lines is reserved as the status bar
 
 }
 int main(int argc, char *argv[])
@@ -551,6 +624,7 @@ int main(int argc, char *argv[])
     if (argc > 1)
         editorOpen(argv[1]);
 
+    editorSetStatusMessage("HELP: Ctrl-Q = Quit");
     while(1)
     {
         editorRefreshScreen();
