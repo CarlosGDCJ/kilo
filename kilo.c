@@ -34,6 +34,7 @@ struct editorConfig {
     int screenrows;
     int screencols;
     int cx, cy;
+    int rx;
     int numrows;
     int rowoff;
     int coloff;
@@ -239,6 +240,18 @@ int editorReadKey()
 }
 
 /** Row ops*/
+int editorRowCxToRx(erow *row, int cx)
+{
+    int i, rx = 0;
+    for (i = 0; i < cx; i++)
+    {
+        if (row->chars[i] == '\t')
+            rx += (KILO_TABSTOP - 1) - (rx % KILO_TABSTOP);
+        rx++;
+    }
+
+    return rx;
+}
 void editorUpdateRow(erow *row)
 {
     int tabs = 0;
@@ -340,15 +353,18 @@ void abFree(struct abuf *ab)
 /** Output **/
 void editorScroll()
 {
+    E.rx = 0;
+    if (E.cy < E.numrows)
+        E.rx = editorRowCxToRx(&E.row[E.cy], E.cx);
     if (E.cy < E.rowoff)
         E.rowoff = E.cy;
     else if (E.cy >= E.rowoff + E.screenrows)
         E.rowoff = E.cy - E.screenrows + 1; // go back 1 screen from E.cy, so that it is now in the middle
     
-    if (E.cx < E.coloff)
-        E.coloff = E.cx;
-    else if (E.cx >= E.coloff + E.screencols)
-        E.coloff = E.cx - E.screencols + 1;
+    if (E.rx < E.coloff)
+        E.coloff = E.rx;
+    else if (E.rx >= E.coloff + E.screencols)
+        E.coloff = E.rx - E.screencols + 1;
 
 }
 
@@ -418,7 +434,7 @@ void editorRefreshScreen()
     editorDrawRows(&ab);
 
     char buf[32];
-    snprintf(buf, sizeof(buf), "\x1b[%d;%dH", E.cy - E.rowoff + 1, E.cx - E.coloff + 1); // position cursor
+    snprintf(buf, sizeof(buf), "\x1b[%d;%dH", E.cy - E.rowoff + 1, E.rx - E.coloff + 1); // position cursor
     abAppend(&ab, buf, strlen(buf));
 
     abAppend(&ab, "\x1b[?25h", 6); // show cursor
@@ -510,6 +526,7 @@ void initEditor()
 {
     E.cx = 0;
     E.cy = 0;
+    E.rx = 0;
     E.numrows = 0;
     E.row = NULL;
     E.rowoff = 0;
