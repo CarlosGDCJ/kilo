@@ -259,6 +259,7 @@ int editorRowCxToRx(erow *row, int cx)
 }
 void editorUpdateRow(erow *row)
 {
+    // this function transforms the chars into what they look like
     int tabs = 0;
     // this pass is necessary to know the amount of memory to allocate
     int j;
@@ -290,7 +291,8 @@ void editorUpdateRow(erow *row)
 
 
 }
-void appendRow(char *s, ssize_t len)
+
+void editorAppendRow(char *s, ssize_t len)
 {
     E.row = realloc(E.row, sizeof(erow) * (E.numrows + 1));
     int at = E.numrows;
@@ -307,6 +309,30 @@ void appendRow(char *s, ssize_t len)
 
     // only increase after everything is done (?)
     E.numrows++;
+
+}
+
+void editorRowInsertChar(erow *row, int at, int c)
+{
+    // our char is an int (?)
+    if (at < 0 || at > row->size)
+        at = row->size;
+    row->chars = realloc(row->chars, row->size + 2); // 1 for the new char, 1 for '\0' (row->size doesn't count '\0')
+    memmove(&row->chars[at + 1], &row->chars[at], row->size - at + 1);
+    row->chars[at] = c;
+    row->size++;
+    editorUpdateRow(row);
+
+}
+
+/** Editor operations */
+void editorInsertChar(int c)
+{
+    if (E.cy == E.numrows)
+        editorAppendRow("", 0);
+    
+    editorRowInsertChar(&E.row[E.cy], E.cx, c);
+    E.cx++;
 
 }
 /** File i/o **/
@@ -332,7 +358,7 @@ void editorOpen(char *filename)
             linelen--;
         }
 
-        appendRow(line, linelen);
+        editorAppendRow(line, linelen);
 
     }
 
@@ -594,6 +620,10 @@ void editorProcessKeypress()
         case ARROW_DOWN:
         case ARROW_RIGHT:
             editorMoveCursor(key);
+            break;
+        
+        default:
+            editorInsertChar(key);
             break;
     }
 }
