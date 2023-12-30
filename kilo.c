@@ -484,9 +484,9 @@ void editorMoveCursor(int c)
 }
 void editorProcessKeypress()
 {
-    int c = editorReadKey();
+    int key = editorReadKey();
 
-    switch (c)
+    switch (key)
     {
         case CTRL_KEY('q'):
             write(STDOUT_FILENO, "\x1b[2J", 4);
@@ -497,10 +497,19 @@ void editorProcessKeypress()
         case PAGE_UP:
         case PAGE_DOWN:
         {
+            if (key == PAGE_UP)
+                E.cy = E.rowoff;
+            else if (key == PAGE_DOWN)
+            {
+                E.cy = E.rowoff + E.screenrows - 1;
+                if (E.cy > E.numrows)
+                    E.cy = E.numrows;
+
+            }
             // need braces to declare the integer
             int times = E.screenrows;
             while (times--)
-                editorMoveCursor(c == PAGE_UP ? ARROW_UP : ARROW_DOWN);
+                editorMoveCursor(key == PAGE_UP ? ARROW_UP : ARROW_DOWN);
             break;
         }
 
@@ -508,14 +517,15 @@ void editorProcessKeypress()
             E.cx = 0;
             break;
         case END_KEY:
-            E.cx = E.screencols - 1;
+            if (E.cy < E.numrows)
+                E.cx = E.row[E.cy].size;
             break;
 
         case ARROW_UP:
         case ARROW_LEFT:
         case ARROW_DOWN:
         case ARROW_RIGHT:
-            editorMoveCursor(c);
+            editorMoveCursor(key);
             break;
     }
 }
