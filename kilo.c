@@ -18,12 +18,15 @@
 /** Defines * */
 #define KILO_VERSION "0.0.1"
 #define CTRL_KEY(a) ((a) & 0x1f)
-#define ABUF_INIT {NULL, 0};
+#define ABUF_INIT {NULL, 0}
+#define KILO_TABSTOP 8
 
 /** Data **/
 typedef struct erow {
     char *chars;
     int size;
+    char *render;
+    int rsize;
 } erow;
 
 struct editorConfig {
@@ -236,6 +239,39 @@ int editorReadKey()
 }
 
 /** Row ops*/
+void editorUpdateRow(erow *row)
+{
+    int tabs = 0;
+    // this pass is necessary to know the amount of memory to allocate
+    int j;
+    for (j = 0; j < row->size; j++)
+        if (row->chars[j] == '\t')
+            tabs++;
+
+    free(row->render);
+    row->render = malloc(row->size + tabs * (KILO_TABSTOP - 1) + 1);
+
+    int idx = 0;
+    for (j = 0; j < row->size; j++)
+    {
+        if (row->chars[j] == '\t')
+        {
+            row->render[idx++] = ' ';
+
+            while (idx % KILO_TABSTOP != 0)
+                row->render[idx++] = ' ';
+        }
+        else
+        {
+            row->render[idx++] = row->chars[j];
+        }
+    }
+
+    row->render[idx] = '\0';
+    row->rsize = idx;
+
+
+}
 void appendRow(char *s, ssize_t len)
 {
     E.row = realloc(E.row, sizeof(erow) * (E.numrows + 1));
@@ -245,6 +281,11 @@ void appendRow(char *s, ssize_t len)
 
     memcpy(E.row[at].chars, s, len);
     E.row[at].chars[len] = '\0';
+
+    E.row[at].render = NULL;
+    E.row[at].rsize = 0;
+    // copy stuff to render and size
+    editorUpdateRow(&E.row[at]);
 
     // only increase after everything is done (?)
     E.numrows++;
@@ -351,12 +392,12 @@ void editorDrawRows(struct abuf *ab)
             // we use this variable (instead of changing
             // E.row.size directly) to not lose the original
             // value of E.row.size
-            int len = E.row[filerow].size - E.coloff;
+            int len = E.row[filerow].rsize - E.coloff;
             if (len < 0)
                 len = 0;
             if (len > E.screencols)
                 len = E.screencols;
-            abAppend(ab, &E.row[filerow].chars[E.coloff], len);
+            abAppend(ab, &E.row[filerow].render[E.coloff], len);
         }
 
 
@@ -388,7 +429,7 @@ void editorRefreshScreen()
 /** Input **/
 void editorMoveCursor(int c)
 {
-    erow *row = (E.cy > E.numrows) ? NULL : &E.row[E.cy];
+    erow *row = (E.cy >= E.numrows) ? NULL : &E.row[E.cy];
     switch (c)
     {
         case ARROW_UP:
@@ -410,11 +451,16 @@ void editorMoveCursor(int c)
         case ARROW_RIGHT:
             if (row && E.cx < row->size)
                 E.cx++;
+            else if (row && E.cx == row->size)
+            {
+                E.cy++;
+                E.cx = 0;
+            }
             break;
     }
 
     // we have to theck for the row again after we increase/decreased x/y
-    row = (E.cy > E.numrows) ? NULL : &E.row[E.cy];
+    row = (E.cy >= E.numrows) ? NULL : &E.row[E.cy];
     int rowlen = row ? row->size : 0;
 
     if (E.cx > rowlen)
