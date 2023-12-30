@@ -5,6 +5,7 @@
 #define _BSD_SOURCE
 #define _GNU_SOURCE
 
+#include <fcntl.h>
 #include <stdarg.h>
 #include <time.h>
 #include <sys/types.h>
@@ -53,8 +54,8 @@ struct abuf {
     int len;
 };
 
-
 enum editorKey {
+    BACKSPACE = 127,
     ARROW_UP = 1000,
     ARROW_DOWN,
     ARROW_RIGHT,
@@ -66,6 +67,8 @@ enum editorKey {
     PAGE_DOWN,
 };
 
+/** prototypes **/
+void editorSetStatusMessage(const char *fmt, ...);
 
 
 /** Terminal **/
@@ -336,6 +339,32 @@ void editorInsertChar(int c)
 
 }
 /** File i/o **/
+char *editorRowsToString(int *buflen)
+{
+    // creates a string with all rows
+    int j;
+    int totlen = 0;
+
+    // calculate the amount of memory
+    for (j = 0; j < E.numrows; j++)
+        totlen += E.row[j].size + 1; // 1 for the \n at every line
+
+    *buflen = totlen;
+    
+    char *buf = malloc(totlen);
+    char *p = buf; //we will advance p, but buf will remain at the start
+
+    for (j = 0; j < E.numrows; j++)
+    {
+        memcpy(p, E.row[j].chars, E.row[j].size);
+        p += E.row[j].size;
+        *p = '\n';
+        p++;
+
+    }
+
+    return buf;
+}
 void editorOpen(char *filename)
 {
     free(E.filename);
@@ -365,6 +394,35 @@ void editorOpen(char *filename)
     free(line);
     fclose(fp);
 
+}
+
+void editorSave()
+{
+    if (E.filename == NULL)
+        return;
+
+    int len;
+    char *buf = editorRowsToString(&len); // free this later
+
+    int fd = open(E.filename, O_RDWR | O_CREAT, 0644);
+    if (fd != -1)
+    {
+        if (ftruncate64(fd, len) != -1)
+        {
+            if (write(fd, buf, len) == len)
+            {
+                close(fd);
+                free(buf);
+                editorSetStatusMessage("%d bytes written to disk", len);
+                return;
+            }
+
+        }
+
+        close(fd);
+    }
+    free(buf);
+    editorSetStatusMessage("Can't save! I/O error: %s", strerror(errno));
 }
 
 /** Append buffer */
@@ -582,10 +640,28 @@ void editorProcessKeypress()
 
     switch (key)
     {
+        case '\r':
+            // TODO
+            break;
+
         case CTRL_KEY('q'):
             write(STDOUT_FILENO, "\x1b[2J", 4);
             write(STDOUT_FILENO, "\x1b[1;1H", 6);
             exit(0);
+            break;
+        
+        case CTRL_KEY('s'):
+            editorSave();
+            break;
+        
+        case BACKSPACE:
+        case CTRL_KEY('h'):
+        case DELETE_KEY:
+            // TODO
+            break;
+        
+        case CTRL_KEY('l'):
+        case '\x1b':
             break;
 
         case PAGE_UP:
@@ -654,7 +730,7 @@ int main(int argc, char *argv[])
     if (argc > 1)
         editorOpen(argv[1]);
 
-    editorSetStatusMessage("HELP: Ctrl-Q = Quit");
+    editorSetStatusMessage("HELP: Ctrl-S = Save | Ctrl-Q = Quit");
     while(1)
     {
         editorRefreshScreen();
