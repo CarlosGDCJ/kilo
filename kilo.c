@@ -264,6 +264,24 @@ int editorRowCxToRx(erow *row, int cx)
 
     return rx;
 }
+
+int editorRowRxToCx(erow *row, int rx)
+{
+    int cur_rx = 0;
+    int cx = 0;
+    for (cx = 0; cx < row->size; cx++)
+    {
+	if (row->chars[cx] == '\t')
+	    cur_rx += (KILO_TABSTOP - 1) - (cur_rx % KILO_TABSTOP);
+	cur_rx++;
+
+	if (cur_rx > rx)
+	    return cx;
+    }
+
+    return cx;
+}
+
 void editorUpdateRow(erow *row)
 {
     // this function transforms the chars into what they look like
@@ -535,6 +553,33 @@ void editorSave()
     }
     free(buf);
     editorSetStatusMessage("Can't save! I/O error: %s", strerror(errno));
+}
+
+void editorFind()
+{
+    char *query = editorPrompt("Search: %s (ESC to cancel)");
+    if (query == NULL)
+      return;
+
+    int i;
+    for (i = 0; i < E.numrows; i++)
+    {
+	erow *row = &E.row[i];
+
+	char *match = strstr(row->render, query);
+
+	if (match)
+	{
+	    E.cy = i;
+	    E.cx = editorRowRxToCx(row, match - row->render);
+	    E.rowoff = E.numrows; // Scroll all the way to the bottom, so when the screen refreshes the cursor is at the start
+	    break;
+
+	}
+    }
+
+    free(query);
+
 }
 
 /** Append buffer */
@@ -866,6 +911,10 @@ void editorProcessKeypress()
                 E.cx = E.row[E.cy].size;
             break;
 
+        case CTRL_KEY('f'):
+	    editorFind();
+	    break;
+
         case ARROW_UP:
         case ARROW_LEFT:
         case ARROW_DOWN:
@@ -908,7 +957,7 @@ int main(int argc, char *argv[])
     if (argc > 1)
         editorOpen(argv[1]);
 
-    editorSetStatusMessage("HELP: Ctrl-S = Save | Ctrl-Q = Quit");
+    editorSetStatusMessage("HELP: Ctrl-S = Save | Ctrl-Q = Quit | Ctrl-F = Find");
     while(1)
     {
         editorRefreshScreen();
